@@ -1,5 +1,6 @@
 
 import re
+import sys
 import yaml
 import traceback
 from pathlib import Path
@@ -119,6 +120,9 @@ def load_config():
     try:
         with open(yaml_file, 'r') as fd:
             config_raw = yaml.load(fd, Loader=yaml.FullLoader)
+        if config_raw is None:
+            print(f'No commands detected. Edit configuration in:\n{yaml_file}', file=sys.stderr)
+            config_raw = {}
         config_raw = validate_config(config_raw)
         config.clear()
         for key in config_raw.keys():

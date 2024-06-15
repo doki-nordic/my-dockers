@@ -11,8 +11,9 @@ pip install -r $SCRIPT_DIR/requirements.txt
 python3 command_entry.py
 
 echo Successful Installation
-echo 
+echo
 echo You have successfully installed my-dockers. Run the following command
 echo to start the manager:
-echo 
+echo
 echo     my-dockers
+echo
