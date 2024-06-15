@@ -1,0 +1,10 @@
+#!/bin/bash
+
+if [ -d "$_MY_DOCKERS_PWD" ]; then
+    cd "$_MY_DOCKERS_PWD"
+else
+    cd ~
+fi
+
+"$@"
+
