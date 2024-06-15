@@ -65,5 +65,4 @@ def main(command_name: str = ''):
 
 
 if __name__ == '__main__':
-    #main('test-my-dockers')
     main()
