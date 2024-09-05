@@ -50,6 +50,7 @@ class Command:
     dockerfile: Path
     share: list[Path]
     append: str
+    options: dict
     container: UninitializedClass | Container | None = uninitialized
     image: UninitializedClass | Image | None = uninitialized
     sources_hash: UninitializedClass | str = uninitialized
@@ -59,6 +60,7 @@ class Command:
         self.dockerfile = command_config.dockerfile
         self.share = command_config.share
         self.append = command_config.append
+        self.options = command_config.options
 
     def get_tag(self):
         return 'my-dockers-' + self.name
@@ -223,7 +225,9 @@ def start(command_name: str, quiet_mode: bool):
             detach=True,
             volumes=volumes,
             name=command.get_tag(),
-            labels={ 'my_dockers_name': command.name })
+            labels={ 'my_dockers_name': command.name },
+            **command.options
+            )
         subprocess.run([
             'docker', 'cp',
             str((Path(__file__).parent / 'my-dockers-start').absolute()),

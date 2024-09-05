@@ -26,6 +26,10 @@ YAML_COMMENT = dedent('''
     #     # the end of Dockerfile. You can customize the docker with it.
     #     RUN git config --global user.name "Mona Lisa" && \\
     #         git config --global user.email Mona.Lisa@example.com
+    #   options:
+    #     # An object containing docker container run options.
+    #     # See https://docker-py.readthedocs.io/en/stable/containers.html#docker.models.containers.ContainerCollection.run
+    #     mem_limit: 2g
     #
     # WARNING!!! After modifying command names, remember to do update with
     # the following command:
@@ -39,6 +43,7 @@ class ConfigEntry:
     dockerfile: Path
     share: list[Path]
     append: str
+    options: dict
 
 
 config: 'dict[str, ConfigEntry]' = {}
@@ -82,6 +87,11 @@ def validate_config_command(name, command):
         command['append'] = '\n'.join(command['append'])
     elif not isinstance(command['append'], str):
         return f'Expecting string or list of strings in "append" entry in "{name}".'
+    # "options" is a dictionary, empty by default
+    if 'options' not in command:
+        command['options'] = dict()
+    elif not isinstance(command['options'], dict):
+        return f'Expecting object (dictionary) in "options" entry in "{name}".'
     return None
 
 
@@ -127,6 +137,7 @@ def load_config():
         config.clear()
         for key in config_raw.keys():
             config[key] = dict_to_simple_namespace(config_raw[key])
+            config[key].options = config_raw[key]['options']
     except BaseException as ex:
         error(f'Cannot parse yaml file: {ex}', traceback.format_exc())
         raise
