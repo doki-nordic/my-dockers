@@ -16,7 +16,7 @@ from textwrap import dedent
 from git import Repo
 from git.exc import InvalidGitRepositoryError
 from git.diff import Diff
-from common import error, warning, data_dir, ExpectedError, SilentError, UninitializedClass, uninitialized, get_command_path, C, create_command
+from common import error, warning, data_dir, ExpectedError, SilentError, UninitializedClass, uninitialized, get_command_path, C, create_command, root
 from config_loader import load_config, ConfigEntry, config
 
 
@@ -51,6 +51,7 @@ class Command:
     share: list[Path]
     append: str
     options: dict
+    line: int | None
     container: UninitializedClass | Container | None = uninitialized
     image: UninitializedClass | Image | None = uninitialized
     sources_hash: UninitializedClass | str = uninitialized
@@ -61,6 +62,7 @@ class Command:
         self.share = command_config.share
         self.append = command_config.append
         self.options = command_config.options
+        self.line = command_config.line
 
     def get_tag(self):
         return 'my-dockers-' + self.name
@@ -214,11 +216,11 @@ def start(command_name: str, quiet_mode: bool):
         image = command.get_image()
         if image is None:
             raise ExpectedError(f'Cannot get image for command "{command_name}".')
-    container = command.get_container()
+    container: 'Container | None' = command.get_container()
     if container is None:
         volumes = [ f'{dir}:{dir}' for dir in command.share ]
         volumes.append('/dev/bus/usb/:/dev/bus/usb')
-        container: Container = client.containers.run(
+        container = client.containers.run(
             image=image.id,
             command=[ 'sleep', 'infinity' ],
             privileged=True,
@@ -314,7 +316,7 @@ def execute(command_name: str, args: list[str], quiet_mode: bool):
         raise SilentError('', res.returncode)
 
 def print_status():
-    print()
+    print(f'\nConfiguration file: {root / "commands.yaml"}')
     commands_to_update = []
     for command in commands.values():
         print()
@@ -348,6 +350,10 @@ def print_status():
         for dir in command.share:
             print(f'        {label}      {dir}')
             label = '      '
+        if command.line is not None:
+            print(f'        Config:     {root / "commands.yaml"}:{command.line}')
+        else:
+            print(f'        Config:     {root / "commands.yaml"}')
     return commands_to_update
 
 

@@ -95,7 +95,7 @@ def validate_config_command(name, command):
     return None
 
 
-def validate_config(config):
+def validate_config(config, config_text):
     # Root is dict
     if not isinstance(config, dict):
         error('Expected a dictionary at top level of commands.yaml.')
@@ -107,6 +107,11 @@ def validate_config(config):
             error(result)
         else:
             new_config[name] = command
+        parts = re.split(f'\n' + re.escape(name) + ':', config_text, 2)
+        if len(parts) > 1:
+            command['line'] = parts[0].count('\n') + 2
+        else:
+            command['line'] = None
     return new_config
 
 
@@ -130,10 +135,12 @@ def load_config():
     try:
         with open(yaml_file, 'r') as fd:
             config_raw = yaml.load(fd, Loader=yaml.FullLoader)
+        with open(yaml_file, 'r') as fd:
+            config_text = fd.read()
         if config_raw is None:
             print(f'No commands detected. Edit configuration in:\n{yaml_file}', file=sys.stderr)
             config_raw = {}
-        config_raw = validate_config(config_raw)
+        config_raw = validate_config(config_raw, config_text)
         config.clear()
         for key in config_raw.keys():
             config[key] = dict_to_simple_namespace(config_raw[key])
