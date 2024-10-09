@@ -30,6 +30,15 @@ YAML_COMMENT = dedent('''
     #     # An object containing docker container run options.
     #     # See https://docker-py.readthedocs.io/en/stable/containers.html#docker.models.containers.ContainerCollection.run
     #     mem_limit: 2g
+    #   prompt:
+    #     # Ask user for input before building the image. Key is the argument passed to the
+    #     # Dockerfile, value is a prompt message that user will see.
+    #     DOWNLOAD_URL: Provide download URL
+    #   password:
+    #     # Ask user for password before building the image. Key is the secret id passed to the
+    #     # Dockerfile, value is a prompt message that user will see.
+    #     # Use "RUN --mount=type=secret" to get access to the secret.
+    #     TOKEN: User token
     #
     # WARNING!!! After modifying command names, remember to do update with
     # the following command:
@@ -44,6 +53,8 @@ class ConfigEntry:
     share: list[Path]
     append: str
     options: dict
+    prompt: 'dict[str, str]'
+    password: 'dict[str, str]'
 
 
 config: 'dict[str, ConfigEntry]' = {}
@@ -92,6 +103,16 @@ def validate_config_command(name, command):
         command['options'] = dict()
     elif not isinstance(command['options'], dict):
         return f'Expecting object (dictionary) in "options" entry in "{name}".'
+    # "prompt" and "password" are dictionaries, empty by default
+    for opt in ('prompt', 'password'):
+        if opt not in command:
+            command[opt] = dict()
+        elif not isinstance(command[opt], dict):
+            return f'Expecting object (dictionary) in "{opt}" entry in "{name}".'
+        else:
+            for value in command[opt].values():
+                if not isinstance(value, str):
+                    return f'Expecting string values in "{opt}" entry in "{name}".'
     return None
 
 
@@ -145,6 +166,8 @@ def load_config():
         for key in config_raw.keys():
             config[key] = dict_to_simple_namespace(config_raw[key])
             config[key].options = config_raw[key]['options']
+            config[key].prompt = config_raw[key]['prompt']
+            config[key].password = config_raw[key]['password']
     except BaseException as ex:
         error(f'Cannot parse yaml file: {ex}', traceback.format_exc())
         raise

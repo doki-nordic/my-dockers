@@ -9,6 +9,7 @@ import grp
 import hashlib
 import time
 import docker
+from getpass import getpass
 from docker.models.images import Image
 from docker.models.containers import Container
 from pathlib import Path
@@ -51,6 +52,8 @@ class Command:
     share: list[Path]
     append: str
     options: dict
+    prompt: 'dict[str, str]'
+    password: 'dict[str, str]'
     line: int | None
     container: UninitializedClass | Container | None = uninitialized
     image: UninitializedClass | Image | None = uninitialized
@@ -62,6 +65,8 @@ class Command:
         self.share = command_config.share
         self.append = command_config.append
         self.options = command_config.options
+        self.prompt = command_config.prompt
+        self.password = command_config.password
         self.line = command_config.line
 
     def get_tag(self):
@@ -186,8 +191,20 @@ def build(command_name: str, quiet_mode: bool):
     docker_file_text = command.dockerfile.read_text() + '\n' + command.append
     dockerfile = (data_dir / (command.name + '.Dockerfile'))
     dockerfile.write_text(docker_file_text)
+    prompt_args = []
+    secret_kwargs = {}
+    for key, text in command.prompt.items():
+        value = input(f'{text}: ')
+        prompt_args.append('--build-arg')
+        prompt_args.append(f'{key}={value}')
+    for key, text in command.password.items():
+        value = getpass(f'{text}: ')
+        prompt_args.append('--secret')
+        prompt_args.append(f'id={key},env=MY_DOCKER_SECRET_{key}')
+        secret_kwargs['env'] = os.environ.copy()
+        secret_kwargs['env'][f'MY_DOCKER_SECRET_{key}'] = value
     res = subprocess.run([
-        'docker', 'build',
+        'docker', 'buildx', 'build',
         '-f', str(dockerfile),
         '-t', command.get_tag(),
         '--label', f'my_dockers_name={command.name}',
@@ -196,8 +213,9 @@ def build(command_name: str, quiet_mode: bool):
         '--build-arg', f'UN={pwd.getpwuid(os.getuid()).pw_name}',
         '--build-arg', f'GI={os.getgid()}',
         '--build-arg', f'GN={grp.getgrgid(os.getgid()).gr_name}',
+        *prompt_args,
         '.'
-    ], cwd=command.dockerfile.parent)
+    ], cwd=command.dockerfile.parent, **secret_kwargs)
     if res.returncode != 0:
         raise ExpectedError(f'Build failed with code {res.returncode}.', res.returncode)
     new_image = command.get_image()
