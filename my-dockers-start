@@ -6,5 +6,7 @@ else
     cd ~
 fi
 
+for file in ~/.my-dockers-startup/*; do if [[ -x "$file" ]]; then source "$file"; fi; done
+
 "$@"
 
