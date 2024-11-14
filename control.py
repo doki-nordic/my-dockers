@@ -9,6 +9,7 @@ import grp
 import hashlib
 import time
 import docker
+import tempfile
 from getpass import getpass
 from docker.models.images import Image
 from docker.models.containers import Container
@@ -54,6 +55,8 @@ class Command:
     options: dict
     prompt: 'dict[str, str]'
     password: 'dict[str, str]'
+    prebuild: str
+    postbuild: str
     line: int | None
     container: UninitializedClass | Container | None = uninitialized
     image: UninitializedClass | Image | None = uninitialized
@@ -67,6 +70,8 @@ class Command:
         self.options = command_config.options
         self.prompt = command_config.prompt
         self.password = command_config.password
+        self.prebuild = command_config.prebuild
+        self.postbuild = command_config.postbuild
         self.line = command_config.line
 
     def get_tag(self):
@@ -110,6 +115,8 @@ class Command:
         hash.update(cnt)
         # Hash docker file extended
         hash.update(self.append.encode())
+        hash.update(self.prebuild.encode())
+        hash.update(self.postbuild.encode())
         # Hash rest of the files based on git status
         try:
             # Create Repo object
@@ -176,6 +183,25 @@ def prompt(message: str, question: str, options: str):
         res = res[0].lower()
     return res
 
+def run_bash_script(script: str, env: 'dict[str, str]'):
+    if not script:
+        return
+    new_env = os.environ.copy()
+    new_env.update(env)
+    name = None
+    with tempfile.NamedTemporaryFile(mode='w+t', delete=False) as temp_file:
+        temp_file.write(f'#/bin/bash\nset -e\n{script}\n')
+        temp_file.close()
+        name = Path(temp_file.name)
+        name.chmod(0o755)
+        res = subprocess.run(['bash', str(name)], env=new_env)
+    try:
+        if name is not None: name.unlink()
+    except:
+        pass
+    if res.returncode != 0:
+        raise ExpectedError(f'Pre-build or post-build script failed with code {res.returncode}.', res.returncode)
+
 def build(command_name: str, quiet_mode: bool):
     command = get_command(command_name)
     old_image = command.get_image()
@@ -193,16 +219,26 @@ def build(command_name: str, quiet_mode: bool):
     dockerfile.write_text(docker_file_text)
     prompt_args = []
     secret_kwargs = {}
+    script_vars = {
+        'MY_DOCKERS_COMMAND': command.name,
+        'MY_DOCKERS_DOCKERFILE': command.dockerfile,
+        'MY_DOCKERS_CONFIG': root / 'commands.yaml',
+        'MY_DOCKERS_TAG': command.get_tag(),
+    }
     for key, text in command.prompt.items():
         value = input(f'{text}: ')
         prompt_args.append('--build-arg')
         prompt_args.append(f'{key}={value}')
+        script_vars[f'PROMPT_{key}'] = value
     for key, text in command.password.items():
         value = getpass(f'{text}: ')
         prompt_args.append('--secret')
         prompt_args.append(f'id={key},env=MY_DOCKER_SECRET_{key}')
-        secret_kwargs['env'] = os.environ.copy()
+        if 'env' not in secret_kwargs:
+            secret_kwargs['env'] = os.environ.copy()
         secret_kwargs['env'][f'MY_DOCKER_SECRET_{key}'] = value
+        script_vars[f'PASSWORD_{key}'] = value
+    run_bash_script(command.prebuild, script_vars)
     res = subprocess.run([
         'docker', 'buildx', 'build',
         '-f', str(dockerfile),
@@ -218,6 +254,7 @@ def build(command_name: str, quiet_mode: bool):
     ], cwd=command.dockerfile.parent, **secret_kwargs)
     if res.returncode != 0:
         raise ExpectedError(f'Build failed with code {res.returncode}.', res.returncode)
+    run_bash_script(command.postbuild, script_vars)
     new_image = command.get_image()
     if old_container is not None:
         old_container.remove(force=True)
