@@ -39,6 +39,27 @@ YAML_COMMENT = dedent('''
     #     # Dockerfile, value is a prompt message that user will see.
     #     # Use "RUN --mount=type=secret" to get access to the secret.
     #     TOKEN: User token
+    #   postbuild: |
+    #     # Execute bash script after building the image. Available environment variables:
+    #     # - MY_DOCKERS_COMMAND     The image is build for this my-dockers command.
+    #     # - MY_DOCKERS_DOCKERFILE  The Dockerfile used.
+    #     # - MY_DOCKERS_CONFIG      The "commands.yaml" file that contains this configuration.
+    #     # - MY_DOCKERS_TAG         The output image tag.
+    #     # - PROMPT_*               The value from "prompt" input.
+    #     # - PASSWORD_*             The value from "password" input.
+    #     # The current directory is not changed when script is executed.
+    #     # If you want to make some changes to the image, create container from
+    #     # $MY_DOCKERS_TAG image, execute commands in it and commit back as $MY_DOCKERS_TAG,
+    #     $ for example:
+    #     docker run --name tmp-cnt $MY_DOCKERS_TAG bash -c 'echo echo Docker started >> ~/.bashrc'
+    #     docker commit tmp-cnt tmp-img
+    #     docker container rm tmp-cnt
+    #     docker rmi $MY_DOCKERS_TAG
+    #     docker tag tmp-img $MY_DOCKERS_TAG
+    #     docker rmi tmp-img
+    #   prebuild: |
+    #     # The same as "postbuild", but before the build.
+    #     echo Starting image build...
     #
     # WARNING!!! After modifying command names, remember to do update with
     # the following command:
@@ -55,6 +76,8 @@ class ConfigEntry:
     options: dict
     prompt: 'dict[str, str]'
     password: 'dict[str, str]'
+    prebuild: str
+    postbuild: str
 
 
 config: 'dict[str, ConfigEntry]' = {}
@@ -88,16 +111,17 @@ def validate_config_command(name, command):
         else:
             warning(f'Invalid share "{dir}" in "{name}".')
     command['share'] = new_share
-    # "append" is a string, empty by default, join list of strings if needed
-    if 'append' not in command:
-        command['append'] = ''
-    elif isinstance(command['append'], list):
-        for line in command['append']:
-            if not isinstance(line, str):
-                return f'Expecting string or list of strings in "append" entry in "{name}".'
-        command['append'] = '\n'.join(command['append'])
-    elif not isinstance(command['append'], str):
-        return f'Expecting string or list of strings in "append" entry in "{name}".'
+    # "append", "prebuild" and "postbuild" are strings, empty by default, join list of strings if needed
+    for opt in ('append', 'prebuild', 'postbuild'):
+        if opt not in command:
+            command[opt] = ''
+        elif isinstance(command[opt], list):
+            for line in command[opt]:
+                if not isinstance(line, str):
+                    return f'Expecting string or list of strings in "{opt}" entry in "{name}".'
+            command[opt] = '\n'.join(command[opt])
+        elif not isinstance(command[opt], str):
+            return f'Expecting string or list of strings in "{opt}" entry in "{name}".'
     # "options" is a dictionary, empty by default
     if 'options' not in command:
         command['options'] = dict()
