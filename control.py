@@ -53,7 +53,7 @@ class Command:
     share: list[Path]
     append: str
     options: dict
-    prompt: 'dict[str, str]'
+    input: 'dict[str, str]'
     password: 'dict[str, str]'
     prebuild: str
     postbuild: str
@@ -68,7 +68,7 @@ class Command:
         self.share = command_config.share
         self.append = command_config.append
         self.options = command_config.options
-        self.prompt = command_config.prompt
+        self.input = command_config.input
         self.password = command_config.password
         self.prebuild = command_config.prebuild
         self.postbuild = command_config.postbuild
@@ -217,7 +217,7 @@ def build(command_name: str, quiet_mode: bool):
     docker_file_text = command.dockerfile.read_text() + '\n' + command.append
     dockerfile = (data_dir / (command.name + '.Dockerfile'))
     dockerfile.write_text(docker_file_text)
-    prompt_args = []
+    input_args = []
     secret_kwargs = {}
     script_vars = {
         'MY_DOCKERS_COMMAND': command.name,
@@ -225,15 +225,15 @@ def build(command_name: str, quiet_mode: bool):
         'MY_DOCKERS_CONFIG': root / 'commands.yaml',
         'MY_DOCKERS_TAG': command.get_tag(),
     }
-    for key, text in command.prompt.items():
+    for key, text in command.input.items():
         value = input(f'{text}: ')
-        prompt_args.append('--build-arg')
-        prompt_args.append(f'{key}={value}')
-        script_vars[f'PROMPT_{key}'] = value
+        input_args.append('--build-arg')
+        input_args.append(f'{key}={value}')
+        script_vars[f'INPUT_{key}'] = value
     for key, text in command.password.items():
         value = getpass(f'{text}: ')
-        prompt_args.append('--secret')
-        prompt_args.append(f'id={key},env=MY_DOCKER_SECRET_{key}')
+        input_args.append('--secret')
+        input_args.append(f'id={key},env=MY_DOCKER_SECRET_{key}')
         if 'env' not in secret_kwargs:
             secret_kwargs['env'] = os.environ.copy()
         secret_kwargs['env'][f'MY_DOCKER_SECRET_{key}'] = value
@@ -249,7 +249,7 @@ def build(command_name: str, quiet_mode: bool):
         '--build-arg', f'UN={pwd.getpwuid(os.getuid()).pw_name}',
         '--build-arg', f'GI={os.getgid()}',
         '--build-arg', f'GN={grp.getgrgid(os.getgid()).gr_name}',
-        *prompt_args,
+        *input_args,
         '.'
     ], cwd=command.dockerfile.parent, **secret_kwargs)
     if res.returncode != 0:
