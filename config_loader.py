@@ -39,6 +39,9 @@ YAML_COMMENT = dedent('''
     #     # Dockerfile, value is a prompt message that user will see.
     #     # Use "RUN --mount=type=secret" to get access to the secret.
     #     TOKEN: User token
+    #   args:
+    #     # An argument passed to the Dockerfile.
+    #     SDK_VERSION: v3.3.0
     #   postbuild: |
     #     # Execute bash script after building the image. Available environment variables:
     #     # - MY_DOCKERS_COMMAND     The image is build for this my-dockers command.
@@ -60,6 +63,13 @@ YAML_COMMENT = dedent('''
     #   prebuild: |
     #     # The same as "postbuild", but before the build.
     #     echo Starting image build...
+    #   shell:
+    #     # Shell command to execute when user runs command without arguments (as array of strings).
+    #     default: ["nrfutil", "sdk-manager", "toolchain", "launch", "--ncs-version", "v3.3.0", "--shell"]
+    #     # Arguments to prefix user command (as array of strings).
+    #     command: ["nrfutil", "sdk-manager", "toolchain", "launch", "--ncs-version", "v3.3.0", "my-dockers-start", "--", "bash", "-c"]
+    #     # Both of above are prefixed with "my-dockers-start" script. If you want to avoid that, just add "my-dockers-start"
+    #     # to the "command" array where you actually want it to be.
     #
     # WARNING!!! After modifying command names, remember to do update with
     # the following command:
@@ -68,6 +78,9 @@ YAML_COMMENT = dedent('''
     #
     ''').strip() + '\n\n\n'
 
+class ShellOptions:
+    default: list[str]
+    command: list[str]
 
 class ConfigEntry:
     dockerfile: Path
@@ -76,8 +89,10 @@ class ConfigEntry:
     options: dict
     prompt: 'dict[str, str]'
     password: 'dict[str, str]'
+    args: 'dict[str, str]'
     prebuild: str
     postbuild: str
+    shell: ShellOptions
 
 
 config: 'dict[str, ConfigEntry]' = {}
@@ -127,8 +142,8 @@ def validate_config_command(name, command):
         command['options'] = dict()
     elif not isinstance(command['options'], dict):
         return f'Expecting object (dictionary) in "options" entry in "{name}".'
-    # "prompt" and "password" are dictionaries, empty by default
-    for opt in ('prompt', 'password'):
+    # "prompt", "password" and "args" are dictionaries, empty by default
+    for opt in ('prompt', 'password', 'args'):
         if opt not in command:
             command[opt] = dict()
         elif not isinstance(command[opt], dict):
@@ -137,6 +152,21 @@ def validate_config_command(name, command):
             for value in command[opt].values():
                 if not isinstance(value, str):
                     return f'Expecting string values in "{opt}" entry in "{name}".'
+    # "shell" is a dictionary with "default" and "command" fields containing array of strings, default is "bash"
+    if 'shell' not in command:
+        command['shell'] = {
+            'default': ['bash'],
+            'command': [],
+        }
+    elif (not isinstance(command['shell'], dict)
+          or 'default' not in command['shell']
+          or not isinstance(command['shell']['default'], list)
+          or not (len(command['shell']['default']) == 0 or isinstance(command['shell']['default'][0], str))
+          or 'command' not in command['shell']
+          or not isinstance(command['shell']['command'], list)
+          or not (len(command['shell']['command']) == 0 or isinstance(command['shell']['command'][0], str))):
+        return f'Expecting object (dictionary) in "shell" entry in "{name}" with "default" and "command" fields containing array of strings.'
+
     return None
 
 
@@ -192,6 +222,7 @@ def load_config():
             config[key].options = config_raw[key]['options']
             config[key].prompt = config_raw[key]['prompt']
             config[key].password = config_raw[key]['password']
+            config[key].args = config_raw[key]['args']
     except BaseException as ex:
         error(f'Cannot parse yaml file: {ex}', traceback.format_exc())
         raise

@@ -19,7 +19,7 @@ from git import Repo
 from git.exc import InvalidGitRepositoryError
 from git.diff import Diff
 from common import error, warning, data_dir, ExpectedError, SilentError, UninitializedClass, uninitialized, get_command_path, C, create_command, root
-from config_loader import load_config, ConfigEntry, config
+from config_loader import ShellOptions, load_config, ConfigEntry, config
 
 
 client = docker.from_env()
@@ -55,8 +55,10 @@ class Command:
     options: dict
     prompt: 'dict[str, str]'
     password: 'dict[str, str]'
+    args: 'dict[str, str]'
     prebuild: str
     postbuild: str
+    shell: ShellOptions
     line: int | None
     container: UninitializedClass | Container | None = uninitialized
     image: UninitializedClass | Image | None = uninitialized
@@ -70,8 +72,10 @@ class Command:
         self.options = command_config.options
         self.prompt = command_config.prompt
         self.password = command_config.password
+        self.args = command_config.args
         self.prebuild = command_config.prebuild
         self.postbuild = command_config.postbuild
+        self.shell = command_config.shell
         self.line = command_config.line
 
     def get_tag(self):
@@ -238,6 +242,10 @@ def build(command_name: str, quiet_mode: bool):
             secret_kwargs['env'] = os.environ.copy()
         secret_kwargs['env'][f'MY_DOCKER_SECRET_{key}'] = value
         script_vars[f'PASSWORD_{key}'] = value
+    for key, text in command.args.items():
+        prompt_args.append('--build-arg')
+        prompt_args.append(f'{key}={text}')
+        script_vars[f'ARG_{key}'] = text
     run_bash_script(command.prebuild, script_vars)
     res = subprocess.run([
         'docker', 'buildx', 'build',
@@ -249,6 +257,10 @@ def build(command_name: str, quiet_mode: bool):
         '--build-arg', f'UN={pwd.getpwuid(os.getuid()).pw_name}',
         '--build-arg', f'GI={os.getgid()}',
         '--build-arg', f'GN={grp.getgrgid(os.getgid()).gr_name}',
+        '--build-arg', f'MY_DOCKERS_COMMAND={command.name}',
+        '--build-arg', f'MY_DOCKERS_DOCKERFILE={command.dockerfile}',
+        '--build-arg', f'MY_DOCKERS_CONFIG={root / 'commands.yaml'}',
+        '--build-arg', f'MY_DOCKERS_TAG={command.get_tag()}',
         *prompt_args,
         '.'
     ], cwd=command.dockerfile.parent, **secret_kwargs)
@@ -356,15 +368,18 @@ def execute(command_name: str, args: list[str], quiet_mode: bool):
         container = command.get_container()
         if container is None:
             raise ExpectedError(f'Cannot find container associated with command "{command_name}".')
-    if len(args) == 0:
-        args = [ 'bash' ]
     run_args = [
         'docker', 'exec',
         '-it',
         '-e', f'_MY_DOCKERS_PWD={Path.cwd()}',
         container.id,
-        'my-dockers-start',
     ]
+    if len(args) == 0:
+        args = command.shell.default
+    else:
+        args = command.shell.command + args
+    if 'my-dockers-start' not in args:
+        run_args.append('my-dockers-start')
     run_args.extend(args)
     res = subprocess.run(run_args)
     if res.returncode != 0:
