@@ -287,12 +287,17 @@ def start(command_name: str, quiet_mode: bool):
     if container is None:
         volumes = [ f'{dir}:{dir}' for dir in command.share ]
         volumes.append('/dev/bus/usb/:/dev/bus/usb')
+        devices = []
+        for i in range(20):
+            devices.append(f'/dev/ttyACM{i}:/dev/ttyACM{i}')
+            devices.append(f'/dev/ttyUSB{i}:/dev/ttyUSB{i}')
         container = client.containers.run(
             image=image.id,
             command=[ 'sleep', 'infinity' ],
             privileged=True,
             detach=True,
             volumes=volumes,
+            devices=devices,
             name=command.get_tag(),
             labels={ 'my_dockers_name': command.name },
             **command.options
